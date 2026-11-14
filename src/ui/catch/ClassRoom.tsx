@@ -297,9 +297,14 @@ function HostScreen({ onExit, adminKey }: { onExit: () => void; adminKey: string
         )}
         <div className="row">
           {room.phase === "lobby" && (
-            <button className="btn primary" disabled={room.players.length === 0} onClick={() => send({ t: "start" })}>
-              Bắt đầu ({room.players.length} người)
-            </button>
+            <>
+              <button className="btn primary" disabled={room.players.length === 0} onClick={() => send({ t: "start" })}>
+                Bắt đầu ({room.players.length} người)
+              </button>
+              <button className="btn" onClick={() => send({ t: "addBots", count: 30 })}>
+                Thêm 30 bot
+              </button>
+            </>
           )}
           {room.phase === "playing" && (
             <button className="btn" onClick={() => send({ t: "end" })}>
@@ -311,6 +316,7 @@ function HostScreen({ onExit, adminKey }: { onExit: () => void; adminKey: string
           </button>
         </div>
       </header>
+      {err && <div className="toast" role="status">{err}</div>}
 
       {room.phase === "lobby" && (
         <div className="host-lobby-wrap">
@@ -1094,7 +1100,7 @@ function CatchPlay({
                         <Pix src="khung/mat-sau.png" className="cframe-img" />
                       </div>
                       <div className="face front">
-                        <CardFront id={gift.cardId} size={170} />
+                        <CardFront id={gift.cardId} size={150} />
                       </div>
                     </div>
                     <p className="gift-note">{gift.duplicate ? `Bạn đã có thẻ này và nhận thêm ${gift.duplicate} điểm.` : "Bạn nhận được một hiệu ứng mới cho phần còn lại của ván chơi."}</p>

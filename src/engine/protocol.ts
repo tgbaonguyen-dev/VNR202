@@ -6,6 +6,7 @@ export type Avatar = "nam" | "nu";
 
 export type ClientMsg =
   | { t: "host"; adminKey: string }
+  | { t: "addBots"; count: number }
   | { t: "join"; code: string; name: string; avatar: Avatar; playerId?: string }
   | { t: "start" }
   | { t: "end" }

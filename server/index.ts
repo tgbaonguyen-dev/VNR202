@@ -69,6 +69,7 @@ interface Player {
   swaps: number;
   shieldUntil: number;
   done: boolean;
+  bot: boolean;
 }
 
 interface Room {
@@ -83,6 +84,7 @@ interface Room {
   feed: string[];
   r: () => number;
   timer?: NodeJS.Timeout;
+  botTimer?: NodeJS.Timeout;
   pending?: NodeJS.Timeout;
   createdAt: number;
 }
@@ -109,7 +111,7 @@ function view(room: Room): RoomView {
     raceBar: room.config.raceBar,
     feed: room.feed.slice(-8),
     players: [...room.players.values()]
-      .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, points: p.points, cards: p.cards, correct: p.correct, answered: p.answered, online: !!p.ws, done: p.done }))
+      .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, points: p.points, cards: p.cards, correct: p.correct, answered: p.answered, online: p.bot || !!p.ws, done: p.done }))
       .sort((a, b) => b.points - a.points),
   };
 }
@@ -137,6 +139,8 @@ function endRoom(room: Room) {
   if (room.phase !== "playing") return;
   room.phase = "ended";
   if (room.timer) clearTimeout(room.timer);
+  if (room.botTimer) clearInterval(room.botTimer);
+  for (const player of room.players.values()) if (player.bot) player.done = true;
   log(room, "Hết giờ!");
   broadcastNow(room);
 }
@@ -150,6 +154,60 @@ const cleanName = (s: unknown) =>
     .replace(/[<>]/g, "")
     .trim()
     .slice(0, 20);
+
+function addBots(room: Room, requested: number): number {
+  const available = Math.max(0, room.config.maxPlayers - room.players.size);
+  const count = Math.min(30, Math.max(0, Math.floor(requested)), available);
+  let nextNumber = 1;
+  for (let i = 0; i < count; i++) {
+    while (room.players.has(`bot${nextNumber}`)) nextNumber++;
+    const number = nextNumber++;
+    const id = `bot${number}`;
+    room.players.set(id, {
+      id,
+      name: `Bot ${String(number).padStart(2, "0")}`,
+      points: 0,
+      ws: null,
+      avatar: number % 2 === 0 ? "nu" : "nam",
+      cards: [],
+      combo: 0,
+      answered: 0,
+      correct: 0,
+      gifts: 0,
+      swaps: 0,
+      shieldUntil: 0,
+      done: false,
+      bot: true,
+    });
+  }
+  return count;
+}
+
+function startBots(room: Room): void {
+  room.botTimer = setInterval(() => {
+    if (room.phase !== "playing") {
+      if (room.botTimer) clearInterval(room.botTimer);
+      return;
+    }
+    let changed = false;
+    for (const bot of room.players.values()) {
+      if (!bot.bot || bot.done || bot.answered >= room.questions.length || room.r() > 0.45) continue;
+      bot.answered++;
+      const correct = room.r() < 0.72;
+      bot.combo = correct ? bot.combo + 1 : 0;
+      if (correct) bot.correct++;
+      const basePoints = correct ? randomInt(25, 76) * Math.min(3, Math.max(1, bot.combo)) : -randomInt(0, 16);
+      bot.points = Math.max(0, bot.points + basePoints);
+      if (room.r() < 0.08) {
+        const cardId = rollCard(room.r);
+        if (!bot.cards.includes(cardId)) bot.cards.push(cardId);
+      }
+      changed = true;
+    }
+    if (changed) broadcast(room);
+  }, 1000);
+  room.botTimer.unref();
+}
 
 function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: string }) {
   if (msg.t === "host") {
@@ -197,7 +255,7 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
     if ([...room.players.values()].some((p) => p.name.toLowerCase() === name.toLowerCase())) return send(ws, { t: "error", msg: "Tên này đã có người dùng." });
     const id = `p${randomInt(100000, 999999)}`;
     const avatar: Avatar = msg.avatar === "nu" ? "nu" : "nam";
-    room.players.set(id, { id, name, avatar, points: 0, cards: [], ws, combo: 0, answered: 0, correct: 0, gifts: 0, swaps: 0, shieldUntil: 0, done: false });
+    room.players.set(id, { id, name, avatar, points: 0, cards: [], ws, combo: 0, answered: 0, correct: 0, gifts: 0, swaps: 0, shieldUntil: 0, done: false, bot: false });
     ctx.room = room;
     ctx.playerId = id;
     send(ws, { t: "joined", code: room.code, playerId: id });
@@ -208,6 +266,16 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
   const room = ctx.room;
   if (!room) return;
 
+  if (msg.t === "addBots" && ws === room.host && room.phase === "lobby") {
+    const added = addBots(room, msg.count);
+    if (added === 0) send(ws, { t: "error", msg: "Phòng đã đủ người, không thể thêm bot." });
+    else {
+      log(room, `Đã thêm ${added} bot thử nghiệm.`);
+      broadcastNow(room);
+    }
+    return;
+  }
+
   if (msg.t === "start" && ws === room.host && room.phase === "lobby") {
     // Chụp cấu hình và câu hỏi lúc bắt đầu: sửa trong trang quản trị không ảnh hưởng ván đang chơi
     room.config = config;
@@ -215,6 +283,7 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
     room.phase = "playing";
     room.startedAt = Date.now();
     room.timer = setTimeout(() => endRoom(room), (room.config.playSec + GRACE_SEC) * 1000);
+    startBots(room);
     log(room, "Bắt đầu!");
     for (const p of room.players.values()) send(p.ws, { t: "setup", questions: room.questions, config: room.config });
     broadcastNow(room);
@@ -299,7 +368,12 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
 // Dọn phòng quá 3 giờ
 setInterval(() => {
   const now = Date.now();
-  for (const [code, r] of rooms) if (now - r.createdAt > 3 * 3600 * 1000) rooms.delete(code);
+  for (const [code, room] of rooms) {
+    if (now - room.createdAt <= 3 * 3600 * 1000) continue;
+    if (room.timer) clearTimeout(room.timer);
+    if (room.botTimer) clearInterval(room.botTimer);
+    rooms.delete(code);
+  }
 }, 10 * 60 * 1000).unref();
 
 // ---------------------------------------------------------------- HTTP: API quản trị và trang web

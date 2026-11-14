@@ -1381,20 +1381,34 @@ img.ava, .ava { image-rendering: pixelated; }
 .reveal-score .minus { color: var(--px-bad); }
 
 /* mở hộp quà, lật thẻ */
-.gift-over { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: rgba(20, 14, 8, 0.6); cursor: pointer; }
+.gift-over { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; padding: 18px; overflow-y: auto; background: rgba(20, 14, 8, 0.6); cursor: pointer; }
 .gift-box { position: relative; display: grid; place-items: center; }
 .gift-big { width: 160px; height: 160px; filter: drop-shadow(0 0 16px #f2c14e); }
 .gift-q { position: absolute; top: -18px; font-family: var(--px-title); font-size: 40px; color: var(--px-gold); text-shadow: 3px 3px 0 var(--px-ink); }
-.gift-reveal { position: relative; display: grid; justify-items: center; gap: 6px; }
+.gift-reveal { position: relative; display: grid; justify-items: center; gap: 12px; width: min(520px, 100%); }
 .gift-fw { position: absolute; top: -40px; left: 50%; transform: translateX(-50%); }
-.flip { position: relative; width: 190px; height: 290px; perspective: 900px; }
+.flip { position: relative; width: 210px; height: 330px; perspective: 900px; }
 .flip .face { position: absolute; inset: 0; display: grid; place-items: start center; backface-visibility: hidden; transform-style: preserve-3d; }
 .flip .face.back { transform: rotateY(0deg); }
-.flip .face.back .cframe-img { position: static; width: 170px; height: 170px; }
-.flip .face.front { transform: rotateY(180deg); background: var(--px-paper); border: 4px solid var(--px-wood-d); padding-top: 8px; }
+.flip .face.back .cframe-img { position: static; width: 150px; height: 150px; }
+.flip .face.front { transform: rotateY(180deg); overflow: hidden; background: var(--px-paper); border: 4px solid var(--px-wood-d); padding: 10px 12px 12px; }
+.gift-reveal .cfront { width: 100% !important; min-width: 0; gap: 4px; }
+.gift-reveal .cname { font-size: 17px; line-height: 1.2; }
+.gift-reveal .crarity { font-size: 19px; line-height: 1.15; }
+.gift-reveal .ceffect {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 58px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  font-size: 19px;
+  line-height: 1.12;
+  overflow-wrap: anywhere;
+}
 .gift-reveal.epic .flip .face.front { box-shadow: 0 0 22px 6px #f2c14e; }
 .gift-reveal.rare .flip .face.front { box-shadow: 0 0 18px 4px #5c9bd1; }
-.gift-note { color: var(--px-gold); font-family: var(--px-title); font-size: 15px; text-shadow: 2px 2px 0 var(--px-ink); margin: 0; }
+.gift-note { width: min(500px, 92vw); color: var(--px-gold); font-family: var(--px-title); font-size: 15px; text-align: center; text-shadow: 2px 2px 0 var(--px-ink); margin: 0; }
 .gift-tap { color: #f6ecd2; margin: 0; }
 @media (prefers-reduced-motion: no-preference) {
   .gift-box { animation: giftshake 0.9s ease-in-out; }
