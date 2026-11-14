@@ -58,6 +58,7 @@ describe("Hứng đáp án", () => {
     for (const c of CROPS) expect(existsSync(`public/images/catch/nongsan/${c.id}.png`)).toBe(true);
     for (const c of CARDS) expect(existsSync(`public/images/catch/the/${c.id}.png`)).toBe(true);
     for (const b of Object.values(BUFFS)) expect(existsSync(`public/images/catch/buff/${b.file}.png`)).toBe(true);
+    for (let frame = 0; frame < 5; frame++) expect(existsSync(`public/images/catch/buff/thu-hoach-${frame}.png`)).toBe(true);
   });
 
   it("điểm: đúng cộng, sai trừ, chuỗi và buff nhân, số ảo bị chặn", () => {
@@ -112,6 +113,22 @@ describe("Hứng đáp án", () => {
     }
     expect(spawned).toBeGreaterThan(12);
     expect(caught).toBeGreaterThan(0);
+  });
+
+  it("buff Thu hoạch thu toàn bộ nông sản và tính tất cả là hứng đúng", () => {
+    const field = {
+      ...newField(),
+      drops: [
+        { id: 1, kind: "harvest" as const, x: 50, y: 84, vy: 100, spin: 0 },
+        { id: 2, kind: "crop" as const, answer: 1, x: 20, y: 20, vy: 20, spin: 0 },
+        { id: 3, kind: "crop" as const, answer: 2, x: 80, y: 60, vy: 20, spin: 0 },
+      ],
+    };
+    const result = stepField(field, 0.01, 50, rng(1), 0, 0, false);
+    const crops = result.caught.filter((item) => item.kind === "crop");
+    expect(crops).toHaveLength(2);
+    expect(crops.every((item) => item.answer === 0)).toBe(true);
+    expect(result.field.drops.some((drop) => drop.kind === "crop")).toBe(false);
   });
 
   it("cấu hình sai bị kẹp về giới hạn, thiếu thì lấy mặc định", () => {

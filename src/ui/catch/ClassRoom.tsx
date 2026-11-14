@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
+import QRCode from "qrcode";
 import type { Avatar, ClientMsg, PlayerView, RoomView, ServerMsg } from "../../engine/protocol";
 import {
   BASKET_Y,
@@ -77,6 +78,34 @@ function useClock(active: boolean) {
   return now;
 }
 
+function RoomQr({ value }: { value: string }) {
+  const [src, setSrc] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setSrc("");
+    setError("");
+    void QRCode.toDataURL(value, {
+      width: 240,
+      margin: 2,
+      errorCorrectionLevel: "M",
+      color: { dark: "#2a1a0e", light: "#fffaf0" },
+    }).then((url) => {
+      if (active) setSrc(url);
+    }).catch((reason: Error) => {
+      if (active) setError(`Không tạo được mã QR: ${reason.message}`);
+    });
+    return () => {
+      active = false;
+    };
+  }, [value]);
+
+  if (error) return <span className="host-qr-error">{error}</span>;
+  if (!src) return <span className="host-qr-loading">Đang tạo QR…</span>;
+  return <img className="host-qr" src={src} alt="Mã QR vào phòng" />;
+}
+
 // ---------------------------------------------------------------- ảnh pixel
 
 /** Ảnh pixel giữ nét; lỗi thì hiện ô chữ thay thế */
@@ -102,6 +131,19 @@ function Sprite({ src, frames, size, fps = 12, loop = false, className = "" }: {
     backgroundImage: `url(${IMG + src})`,
   } as CSSProperties;
   return <span className={`spr ${className}`} style={style} aria-hidden="true" />;
+}
+
+function HarvestBuff() {
+  const [frame, setFrame] = useState(0);
+  const reduce = useMemo(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches, []);
+
+  useEffect(() => {
+    if (reduce) return;
+    const timer = window.setInterval(() => setFrame((value) => (value + 1) % 5), 125);
+    return () => window.clearInterval(timer);
+  }, [reduce]);
+
+  return <Pix src={`buff/thu-hoach-${frame}.png`} alt="Thu hoạch" label="Thu" className="buff-drop" />;
 }
 
 function AvatarPic({ avatar, size = 48, wave = false }: { avatar: Avatar; size?: number; wave?: boolean }) {
@@ -227,7 +269,7 @@ function HowTo({ compact = false }: { compact?: boolean }) {
 
 export function ClassRoom({ onExit, initialCode, mode, adminKey }: { onExit: () => void; initialCode: string | undefined; mode: "home" | "host"; adminKey: string | null }) {
   const [role, setRole] = useState<"choose" | "host" | "player">(mode === "host" ? "host" : initialCode ? "player" : "choose");
-  if (role === "host" && adminKey) return <HostScreen onExit={onExit} adminKey={adminKey} />;
+  if (role === "host" && adminKey) return <HostScreen onExit={onExit} adminKey={adminKey} initialCode={initialCode} />;
   if (role === "player") return <PlayerScreen onExit={onExit} initialCode={initialCode} />;
   return (
     <main className="catch-wrap catch-home">
@@ -251,7 +293,7 @@ export function ClassRoom({ onExit, initialCode, mode, adminKey }: { onExit: () 
 
 // ---------------------------------------------------------------- màn hình chiếu
 
-function HostScreen({ onExit, adminKey }: { onExit: () => void; adminKey: string }) {
+function HostScreen({ onExit, adminKey, initialCode }: { onExit: () => void; adminKey: string; initialCode: string | undefined }) {
   const [room, setRoom] = useState<RoomView | null>(null);
   const [err, setErr] = useState("");
   const { send, status } = useSocket((m) => {
@@ -262,12 +304,13 @@ function HostScreen({ onExit, adminKey }: { onExit: () => void; adminKey: string
   useEffect(() => {
     if (!asked.current) {
       asked.current = true;
-      send({ t: "host", adminKey });
+      if (initialCode) send({ t: "resumeHost", adminKey, code: initialCode });
+      else send({ t: "host", adminKey });
     }
-  }, [send, adminKey]);
+  }, [send, adminKey, initialCode]);
   const now = useClock(room?.phase === "playing");
   const left = room ? Math.max(0, Math.ceil((room.startedAt + room.playSec * 1000 - now) / 1000)) : 0;
-  const joinUrl = `${location.origin}${location.pathname}#lop`;
+  const joinUrl = room ? `${location.origin}${location.pathname}#lop-${room.code}` : "";
 
   if (!room) {
     return (
@@ -285,9 +328,13 @@ function HostScreen({ onExit, adminKey }: { onExit: () => void; adminKey: string
   return (
     <main className="host" style={{ backgroundImage: `url(${IMG}nen/chieu-vang.png)` }}>
       <header className="host-top">
-        <div>
-          <div className="host-hint">Người chơi truy cập {joinUrl} và nhập mã phòng</div>
-          <div className="host-code">{room.code}</div>
+        <div className="host-entry">
+          <RoomQr value={joinUrl} />
+          <div className="host-room-info">
+            <div className="host-hint">Quét mã QR để vào thẳng phòng</div>
+            <div className="host-code">{room.code}</div>
+            <a className="host-link" href={joinUrl}>{joinUrl}</a>
+          </div>
         </div>
         {room.phase === "playing" && (
           <div className="host-time">
@@ -508,7 +555,7 @@ function PlayerScreen({ onExit, initialCode }: { onExit: () => void; initialCode
           <AvatarPic avatar={mine.avatar} size={96} wave />
           <h2 className="px-title">Phòng {room.code}</h2>
           <p>
-            {mine.name} đã vào phòng. Vui lòng chờ thầy cô bắt đầu. <span className="px-muted">Hiện có {room.players.length} người chơi.</span>
+            {mine.name} đã vào phòng. Vui lòng chờ trò chơi bắt đầu. <span className="px-muted">Hiện có {room.players.length} người chơi.</span>
           </p>
           <h3 className="howto-title">Cách chơi</h3>
           <HowTo />
@@ -576,7 +623,11 @@ function CatchPlay({
   const ROUND_SEC = cfg.roundSec;
   const REVEAL_SEC = cfg.revealSec;
   const r = useMemo(() => rng(room.startedAt ^ Number(me.id.slice(1) || 7)), [room.startedAt, me.id]);
-  const passive = useMemo(() => passiveOf(me.cards, cfg), [me.cards, cfg]);
+  const mobileBasketScale = useMemo(() => (window.matchMedia("(max-width: 640px)").matches ? 1.5 : 1), []);
+  const passive = useMemo(() => {
+    const value = passiveOf(me.cards, cfg);
+    return { ...value, width: value.width * mobileBasketScale };
+  }, [me.cards, cfg, mobileBasketScale]);
   // Đồng hồ chơi riêng của mỗi người: mở hộp quà, lật thẻ không tính. Vào lại giữa ván thì tính theo giờ máy chủ.
   const [playLeft, setPlayLeft] = useState(() => Math.max(0, cfg.playSec - (Date.now() - room.startedAt) / 1000));
   const playLeftRef = useRef(playLeft);
@@ -630,7 +681,6 @@ function CatchPlay({
   const bad = useRef(0);
   const weighted = useRef(0);
   const gold = useRef(0);
-  const shieldUsed = useRef(false);
   const target = useRef(50);
   const keys = useRef({ left: false, right: false });
   const area = useRef<HTMLDivElement>(null);
@@ -699,7 +749,6 @@ function CatchPlay({
     bad.current = 0;
     weighted.current = 0;
     gold.current = 0;
-    shieldUsed.current = false;
     setLastPts(null);
     const f = startRound(fieldRef.current, r, passiveRef.current, cfg);
     fieldRef.current = f;
@@ -722,12 +771,7 @@ function CatchPlay({
           sfx.good(good.current);
           flashEdge("good");
           addFx({ kind: "good", x: c.x, text: `+${Math.round((20 + p.perGood) * p.goodMult * m)}` });
-        } else if (buffActive(f, "shield") && !shieldUsed.current) {
-          // Khiên đỡ một lần hứng sai
-          shieldUsed.current = true;
-          const nf = { ...f, until: { ...f.until, shield: f.t } };
-          fieldRef.current = nf;
-          setField(nf);
+        } else if (buffActive(f, "shield")) {
           addFx({ kind: "block", x: c.x, text: "Khiên đỡ!" });
           sfx.block();
         } else {
@@ -1008,6 +1052,8 @@ function CatchPlay({
                   <Pix src="ui/dong-xu.png" className="swap-coin b" />
                   <b>ĐỔI</b>
                 </span>
+              ) : d.kind === "harvest" ? (
+                <HarvestBuff />
               ) : (
                 <Pix src={`buff/${BUFFS[d.kind].file}.png`} alt={BUFFS[d.kind].name} label={BUFFS[d.kind].name.slice(0, 2)} className="buff-drop" />
               )}

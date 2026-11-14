@@ -102,7 +102,7 @@ export function Admin({ onExit }: { onExit: () => void }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
   const [tab, setTab] = useState<"config" | "questions" | "rooms">("config");
-  const [hosting, setHosting] = useState(false);
+  const [hosting, setHosting] = useState<{ code: string | undefined } | null>(null);
 
   const login = useCallback(async (password: string) => {
     const res = await fetch("/api/admin/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password }) }).catch(() => null);
@@ -152,7 +152,7 @@ export function Admin({ onExit }: { onExit: () => void }) {
   }
 
   if (hosting) {
-    return <ClassRoom initialCode={undefined} mode="host" adminKey={key} onExit={() => setHosting(false)} />;
+    return <ClassRoom initialCode={hosting.code} mode="host" adminKey={key} onExit={() => setHosting(null)} />;
   }
 
   return (
@@ -173,7 +173,7 @@ export function Admin({ onExit }: { onExit: () => void }) {
           ))}
         </nav>
         <div className="admin-head-actions">
-          <button className="btn primary" onClick={() => setHosting(true)}>
+          <button className="btn primary" onClick={() => setHosting({ code: undefined })}>
             Mở màn hình chiếu
           </button>
           <button
@@ -193,7 +193,7 @@ export function Admin({ onExit }: { onExit: () => void }) {
       </header>
       {tab === "config" && <ConfigTab adminKey={key} />}
       {tab === "questions" && <QuestionsTab adminKey={key} />}
-      {tab === "rooms" && <RoomsTab adminKey={key} />}
+      {tab === "rooms" && <RoomsTab adminKey={key} onHost={(code) => setHosting({ code })} />}
     </main>
   );
 }
@@ -387,8 +387,9 @@ function QuestionsTab({ adminKey }: { adminKey: string }) {
   );
 }
 
-function RoomsTab({ adminKey }: { adminKey: string }) {
+function RoomsTab({ adminKey, onHost }: { adminKey: string; onHost: (code: string) => void }) {
   const [rooms, setRooms] = useState<{ code: string; phase: string; players: number; startedAt: number }[] | null>(null);
+  const [msg, setMsg] = useState("");
   const load = useCallback(() => {
     void call<{ rooms: typeof rooms }>("/api/admin/rooms", adminKey).then(({ data }) => setRooms(data.rooms ?? []));
   }, [adminKey]);
@@ -399,9 +400,18 @@ function RoomsTab({ adminKey }: { adminKey: string }) {
   }, [load]);
   if (!rooms) return <p className="admin-card">Đang tải…</p>;
   const label: Record<string, string> = { lobby: "Đang chờ", playing: "Đang chơi", ended: "Đã kết thúc" };
+  const remove = async (code: string) => {
+    if (!window.confirm(`Xóa phòng ${code}? Người đang ở trong phòng sẽ bị ngắt kết nối.`)) return;
+    const { status } = await call<{ ok?: boolean; error?: string }>(`/api/admin/rooms/${code}`, adminKey, { method: "DELETE" });
+    if (status === 200) {
+      setMsg(`Đã xóa phòng ${code}.`);
+      load();
+    } else setMsg(`Không thể xóa phòng ${code}.`);
+  };
   return (
     <section className="admin-card">
       <p className="admin-note">Tự cập nhật mỗi 5 giây. Phòng quá 3 giờ tự xóa.</p>
+      {msg && <p className="admin-msg" role="status">{msg}</p>}
       {rooms.length === 0 ? (
         <p>Chưa có phòng nào.</p>
       ) : (
@@ -412,6 +422,7 @@ function RoomsTab({ adminKey }: { adminKey: string }) {
               <th>Trạng thái</th>
               <th>Người chơi</th>
               <th>Bắt đầu</th>
+              <th>Thao tác</th>
             </tr>
           </thead>
           <tbody>
@@ -421,6 +432,12 @@ function RoomsTab({ adminKey }: { adminKey: string }) {
                 <td>{label[r.phase] ?? r.phase}</td>
                 <td>{r.players}</td>
                 <td>{r.startedAt ? new Date(r.startedAt).toLocaleTimeString("vi-VN") : "–"}</td>
+                <td>
+                  <div className="row">
+                    <button className="btn" onClick={() => onHost(r.code)}>Vào lại</button>
+                    <button className="btn ghost" onClick={() => void remove(r.code)}>Xóa</button>
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>

@@ -149,6 +149,20 @@ function checkAllDone(room: Room) {
   if (room.phase === "playing" && room.players.size > 0 && [...room.players.values()].every((p) => p.done || !p.ws)) endRoom(room);
 }
 
+function deleteRoom(room: Room): void {
+  if (room.timer) clearTimeout(room.timer);
+  if (room.botTimer) clearInterval(room.botTimer);
+  if (room.pending) clearTimeout(room.pending);
+  rooms.delete(room.code);
+  const sockets = new Set<WebSocket>();
+  sockets.add(room.host);
+  for (const player of room.players.values()) if (player.ws) sockets.add(player.ws);
+  for (const socket of sockets) {
+    send(socket, { t: "error", msg: "Phòng đã bị quản trị viên xóa." });
+    socket.close(4000, "Room deleted");
+  }
+}
+
 const cleanName = (s: unknown) =>
   String(s ?? "")
     .replace(/[<>]/g, "")
@@ -229,6 +243,23 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
       createdAt: Date.now(),
     };
     rooms.set(room.code, room);
+    ctx.room = room;
+    send(ws, { t: "hosted", code: room.code });
+    broadcastNow(room);
+    return;
+  }
+
+  if (msg.t === "resumeHost") {
+    if (!samePassword(msg.adminKey)) {
+      send(ws, { t: "error", msg: "Bạn không có quyền quản lý phòng." });
+      return;
+    }
+    const room = rooms.get(String(msg.code));
+    if (!room) {
+      send(ws, { t: "error", msg: "Không tìm thấy phòng. Phòng có thể đã bị xóa hoặc máy chủ đã khởi động lại." });
+      return;
+    }
+    room.host = ws;
     ctx.room = room;
     send(ws, { t: "hosted", code: room.code });
     broadcastNow(room);
@@ -368,11 +399,9 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
 // Dọn phòng quá 3 giờ
 setInterval(() => {
   const now = Date.now();
-  for (const [code, room] of rooms) {
+  for (const room of rooms.values()) {
     if (now - room.createdAt <= 3 * 3600 * 1000) continue;
-    if (room.timer) clearTimeout(room.timer);
-    if (room.botTimer) clearInterval(room.botTimer);
-    rooms.delete(code);
+    deleteRoom(room);
   }
 }, 10 * 60 * 1000).unref();
 
@@ -432,6 +461,13 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string) {
   }
   if (path === "/api/admin/rooms" && req.method === "GET") {
     return json(res, 200, { rooms: [...rooms.values()].map((r) => ({ code: r.code, phase: r.phase, players: r.players.size, startedAt: r.startedAt })) });
+  }
+  if (path.startsWith("/api/admin/rooms/") && req.method === "DELETE") {
+    const code = path.slice("/api/admin/rooms/".length);
+    const room = rooms.get(code);
+    if (!room) return json(res, 404, { error: "Không tìm thấy phòng" });
+    deleteRoom(room);
+    return json(res, 200, { ok: true });
   }
   return json(res, 404, { error: "Không có" });
 }

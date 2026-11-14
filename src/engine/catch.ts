@@ -174,14 +174,15 @@ export function buildQuestions(list: CustomQuestion[], seed: number, n: number):
 
 // ---------------------------------------------------------------- buff và thẻ làng nghề
 
-export type BuffId = "wide" | "slow" | "x2" | "magnet" | "shield";
+export type BuffId = "wide" | "slow" | "x2" | "magnet" | "shield" | "harvest";
 
 export const BUFFS: Record<BuffId, { name: string; file: string; sec: number; desc: string }> = {
   wide: { name: "Thúng rộng", file: "ro-to", sec: 8, desc: "Thúng rộng gấp rưỡi" },
   slow: { name: "Chậm lại", file: "cham", sec: 8, desc: "Đồ rơi chậm một nửa" },
   x2: { name: "Nhân đôi", file: "x2", sec: 8, desc: "Điểm hứng đúng ×2" },
   magnet: { name: "Nam châm", file: "namcham", sec: 8, desc: "Hút nông sản đúng về thúng" },
-  shield: { name: "Khiên", file: "khien", sec: 10, desc: "Đỡ một lần hứng sai, không bị trừ điểm" },
+  shield: { name: "Khiên", file: "khien", sec: 5, desc: "Hứng sai không bị trừ điểm trong 5 giây" },
+  harvest: { name: "Thu hoạch", file: "thu-hoach", sec: 0, desc: "Thu toàn bộ nông sản trên sân và tính là hứng đúng" },
 };
 
 export type CardRarity = "common" | "rare" | "epic";
@@ -334,7 +335,7 @@ export interface Field {
 }
 
 export function newField(): Field {
-  return { t: 0, basketX: 50, drops: [], nextId: 1, nextCrop: 0, nextExtra: 2.5, giftAt: -1, until: { wide: 0, slow: 0, x2: 0, magnet: 0, shield: 0 } };
+  return { t: 0, basketX: 50, drops: [], nextId: 1, nextCrop: 0, nextExtra: 2.5, giftAt: -1, until: { wide: 0, slow: 0, x2: 0, magnet: 0, shield: 0, harvest: 0 } };
 }
 
 /** Bắt đầu một câu: bỏ đồ cũ, hẹn giờ có thể rơi hộp quà */
@@ -370,7 +371,7 @@ export interface Catch {
   x: number;
 }
 
-const EXTRA_KINDS: BuffId[] = ["wide", "slow", "x2", "magnet", "shield"];
+const EXTRA_KINDS: BuffId[] = ["wide", "slow", "x2", "magnet", "shield", "harvest"];
 
 /** Chọn vị trí ngang không sát các đồ đang ở phía trên sân */
 function freeX(drops: Drop[], r: () => number, gap: number): number {
@@ -426,9 +427,9 @@ export function stepField(
   const step = cfg.basketSpeed * p.move * dt;
   const bx = Math.max(4, Math.min(96, f.basketX + Math.max(-step, Math.min(step, targetX - f.basketX))));
   const half = basketWidth({ ...f, t }, p, cfg) / 2;
-  const caught: Catch[] = [];
+  let caught: Catch[] = [];
   const until = { ...f.until };
-  const kept: Drop[] = [];
+  let kept: Drop[] = [];
   for (const d of [...f.drops, ...fresh]) {
     const y = d.y + d.vy * slow * dt;
     let x = d.x;
@@ -442,6 +443,13 @@ export function stepField(
       continue;
     }
     if (y <= 104) kept.push({ ...d, x, y });
+  }
+  if (caught.some((item) => item.kind === "harvest")) {
+    caught = [
+      ...caught.filter((item) => item.kind !== "crop"),
+      ...[...f.drops, ...fresh].filter((drop) => drop.kind === "crop").map((drop) => ({ kind: "crop" as const, answer: correct, x: drop.x })),
+    ];
+    kept = kept.filter((drop) => drop.kind !== "crop");
   }
   return { field: { ...f, t, basketX: bx, drops: kept, nextId, nextCrop, nextExtra, giftAt, until }, caught };
 }
