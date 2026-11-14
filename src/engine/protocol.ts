@@ -34,6 +34,14 @@ export interface PlayerView {
   done: boolean;
 }
 
+export type FeedKind = "system" | "overtake" | "swap" | "card" | "streak" | "bonus" | "finish";
+
+export interface FeedItem {
+  id: number;
+  kind: FeedKind;
+  text: string;
+}
+
 export interface RoomView {
   code: string;
   phase: "lobby" | "playing" | "ended";
@@ -41,7 +49,7 @@ export interface RoomView {
   startedAt: number;
   playSec: number;
   raceBar: boolean;
-  feed: string[];
+  feed: FeedItem[];
   players: PlayerView[];
 }
 

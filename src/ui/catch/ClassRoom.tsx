@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, MutableRefObject } from "react";
 import QRCode from "qrcode";
-import type { Avatar, ClientMsg, PlayerView, RoomView, ServerMsg } from "../../engine/protocol";
+import type { Avatar, ClientMsg, FeedKind, PlayerView, RoomView, ServerMsg } from "../../engine/protocol";
 import {
   BASKET_Y,
   BUFFS,
@@ -36,6 +36,15 @@ const BG = [
   "nen/lang-nghe.png",
   "nen/ven-khu-cong-nghiep.png",
 ];
+const FEED_LABEL: Record<FeedKind, string> = {
+  system: "Hệ thống",
+  overtake: "Vượt hạng",
+  swap: "Đổi điểm",
+  card: "Thẻ hiếm",
+  streak: "Chuỗi điểm",
+  bonus: "Thưởng",
+  finish: "Hoàn thành",
+};
 
 // ---------------------------------------------------------------- kết nối máy chủ
 
@@ -460,8 +469,11 @@ function HostScreen({ onExit, adminKey, initialCode }: { onExit: () => void; adm
           <aside className="host-feed">
             <h3>Diễn biến</h3>
             <ul>
-              {[...room.feed].reverse().map((l, i) => (
-                <li key={i}>{l}</li>
+              {[...room.feed].reverse().map((item) => (
+                <li key={item.id} className={`feed-event ${item.kind}`}>
+                  <span className="feed-tag">{FEED_LABEL[item.kind]}</span>
+                  <span>{item.text}</span>
+                </li>
               ))}
             </ul>
           </aside>
@@ -883,12 +895,12 @@ function CatchPlay({
     return () => cancelAnimationFrame(raf);
   }, [done, gift, finished, r, q, qi, onCatch, send, cfg, READY_SEC, ROUND_SEC, REVEAL_SEC]);
 
-  // Thông báo khi người khác mở thẻ hiếm
-  const feedSeen = useRef(room.feed.length);
+  // Thông báo các diễn biến đáng chú ý của người khác
+  const feedSeen = useRef(room.feed.at(-1)?.id ?? 0);
   useEffect(() => {
-    const fresh = room.feed.slice(feedSeen.current).filter((l) => !l.startsWith(me.name));
-    feedSeen.current = room.feed.length;
-    if (fresh.length) onToast(fresh[fresh.length - 1]);
+    const fresh = room.feed.filter((item) => item.id > feedSeen.current && !item.text.startsWith(me.name) && ["overtake", "swap", "card"].includes(item.kind));
+    feedSeen.current = room.feed.at(-1)?.id ?? feedSeen.current;
+    if (fresh.length) onToast(fresh[fresh.length - 1].text);
   }, [room.feed, me.name, onToast]);
 
   // Điều khiển: chuột/chạm và phím

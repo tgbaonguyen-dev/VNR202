@@ -1,5 +1,10 @@
 # Danh sách hình ảnh
 
+> Phiên bản hiện tại chỉ còn chế độ Hứng đáp án. Danh mục asset chạy thật,
+> lý do sử dụng và phần giải thích tên game nằm tại
+> [`docs/asset-handoff/`](./asset-handoff/README.md). Nội dung bên dưới được giữ
+> làm tài liệu cho chế độ mô phỏng cuộc đời cũ.
+
 Bỏ ảnh vào đúng đường dẫn dưới đây là game tự dùng. Thiếu ảnh nào thì game tự vẽ hình giữ chỗ, không lỗi.
 Tên file phải đúng y chang (chữ thường, không dấu, đuôi `.png`).
 

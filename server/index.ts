@@ -15,7 +15,7 @@ import { CARD_BY_ID, DUPLICATE_POINTS, MAX_GOLD, QUESTION_POOL, buildQuestions, 
 import type { Question } from "../src/engine/catch";
 import { DEFAULT_CONFIG, sanitizeConfig, sanitizeQuestions } from "../src/engine/catchConfig";
 import type { CustomQuestion, GameConfig } from "../src/engine/catchConfig";
-import type { Avatar, ClientMsg, RoomView, ServerMsg } from "../src/engine/protocol";
+import type { Avatar, ClientMsg, FeedItem, FeedKind, RoomView, ServerMsg } from "../src/engine/protocol";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const DIST = join(process.cwd(), "dist");
@@ -81,7 +81,8 @@ interface Room {
   config: GameConfig;
   questions: Question[];
   players: Map<string, Player>;
-  feed: string[];
+  feed: FeedItem[];
+  feedSeq: number;
   r: () => number;
   timer?: NodeJS.Timeout;
   botTimer?: NodeJS.Timeout;
@@ -102,6 +103,10 @@ function send(ws: WebSocket | null, m: ServerMsg) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(m));
 }
 
+function rankedPlayers(room: Room): Player[] {
+  return [...room.players.values()].sort((a, b) => b.points - a.points || a.id.localeCompare(b.id));
+}
+
 function view(room: Room): RoomView {
   return {
     code: room.code,
@@ -110,9 +115,8 @@ function view(room: Room): RoomView {
     playSec: room.config.playSec,
     raceBar: room.config.raceBar,
     feed: room.feed.slice(-8),
-    players: [...room.players.values()]
+    players: rankedPlayers(room)
       .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, points: p.points, cards: p.cards, correct: p.correct, answered: p.answered, online: p.bot || !!p.ws, done: p.done }))
-      .sort((a, b) => b.points - a.points),
   };
 }
 
@@ -130,9 +134,26 @@ function broadcast(room: Room) {
   room.pending = setTimeout(() => broadcastNow(room), 200);
 }
 
-function log(room: Room, line: string) {
-  room.feed.push(line);
+function log(room: Room, kind: FeedKind, text: string): void {
+  room.feed.push({ id: ++room.feedSeq, kind, text });
   if (room.feed.length > 40) room.feed.shift();
+}
+
+function logRankChange(room: Room, player: Player, before: Player[]): void {
+  if (player.bot) return;
+  const beforeRank = before.findIndex((item) => item.id === player.id);
+  const after = rankedPlayers(room);
+  const afterRank = after.findIndex((item) => item.id === player.id);
+  if (beforeRank < 0 || afterRank < 0 || beforeRank === afterRank) return;
+  if (afterRank < beforeRank) {
+    const passed = before[afterRank];
+    if (!passed || passed.id === player.id) return;
+    const place = afterRank === 0 ? "vươn lên dẫn đầu" : `lên hạng ${afterRank + 1}`;
+    log(room, "overtake", `${player.name} vượt ${passed.name}, ${place}.`);
+    return;
+  }
+  const passer = after[beforeRank];
+  if (passer && passer.id !== player.id) log(room, "overtake", `${passer.name} vượt ${player.name} để lên hạng ${beforeRank + 1}.`);
 }
 
 function endRoom(room: Room) {
@@ -141,7 +162,7 @@ function endRoom(room: Room) {
   if (room.timer) clearTimeout(room.timer);
   if (room.botTimer) clearInterval(room.botTimer);
   for (const player of room.players.values()) if (player.bot) player.done = true;
-  log(room, "Hết giờ!");
+  log(room, "system", "Ván chơi đã kết thúc.");
   broadcastNow(room);
 }
 
@@ -239,6 +260,7 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
       questions: [],
       players: new Map(),
       feed: [],
+      feedSeq: 0,
       r: rng(Date.now() & 0x7fffffff),
       createdAt: Date.now(),
     };
@@ -301,7 +323,7 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
     const added = addBots(room, msg.count);
     if (added === 0) send(ws, { t: "error", msg: "Phòng đã đủ người, không thể thêm bot." });
     else {
-      log(room, `Đã thêm ${added} bot thử nghiệm.`);
+      log(room, "system", `Đã thêm ${added} bot thử nghiệm.`);
       broadcastNow(room);
     }
     return;
@@ -315,7 +337,7 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
     room.startedAt = Date.now();
     room.timer = setTimeout(() => endRoom(room), (room.config.playSec + GRACE_SEC) * 1000);
     startBots(room);
-    log(room, "Bắt đầu!");
+    log(room, "system", "Ván chơi bắt đầu.");
     for (const p of room.players.values()) send(p.ws, { t: "setup", questions: room.questions, config: room.config });
     broadcastNow(room);
     return;
@@ -333,6 +355,7 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
   if (msg.t === "answer") {
     // Mỗi câu chỉ nộp một lần, đúng thứ tự
     if ((msg.q | 0) !== p.answered || p.answered >= room.questions.length) return;
+    const rankingBefore = rankedPlayers(room);
     p.answered++;
     const won = roundWon(msg.good | 0, msg.bad | 0);
     p.combo = won ? p.combo + 1 : 0;
@@ -340,6 +363,9 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
     const gold = Math.max(0, Math.min(MAX_GOLD, msg.gold | 0));
     const pts = roundPoints(msg.good | 0, msg.bad | 0, p.combo, Number(msg.mult) || 1, passiveOf(p.cards, cfg), cfg) + gold * cfg.goldPoints;
     p.points = Math.max(0, p.points + pts);
+    logRankChange(room, p, rankingBefore);
+    if (p.combo === 3 || p.combo === 5) log(room, "streak", `${p.name} đạt chuỗi ${p.combo} câu thắng liên tiếp.`);
+    if (gold === MAX_GOLD) log(room, "bonus", `${p.name} gom đủ ${MAX_GOLD} thỏi vàng trong một câu.`);
     send(ws, { t: "answered", points: pts, combo: p.combo });
     broadcast(room);
     return;
@@ -351,9 +377,13 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
     const cardId = rollCard(room.r);
     const card = CARD_BY_ID[cardId];
     const duplicate = p.cards.includes(cardId);
+    const rankingBefore = rankedPlayers(room);
     if (duplicate) p.points += DUPLICATE_POINTS[card.rarity];
     else p.cards.push(cardId);
-    if (card.rarity !== "common" && !duplicate) log(room, `${p.name} mở được thẻ ${card.name}!`);
+    if (duplicate) {
+      log(room, "bonus", `${p.name} mở trùng thẻ ${card.name}, nhận thêm ${DUPLICATE_POINTS[card.rarity]} điểm.`);
+      logRankChange(room, p, rankingBefore);
+    } else if (card.rarity !== "common") log(room, "card", `${p.name} mở được thẻ ${card.name}.`);
     send(ws, { t: "card", cardId, duplicate: duplicate ? DUPLICATE_POINTS[card.rarity] : 0 });
     broadcast(room);
     return;
@@ -369,16 +399,17 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
     if (!above) {
       p.points += SWAP_TOP_BONUS;
       send(ws, { t: "swapped", with: "", before, after: p.points, top: true });
+      log(room, "bonus", `${p.name} đang dẫn đầu, nhận thêm ${SWAP_TOP_BONUS} điểm từ ô đổi điểm.`);
     } else if (above.shieldUntil > Date.now()) {
       send(ws, { t: "swapped", with: above.name, before, after: before, blocked: true });
-      log(room, `${above.name} dùng khiên chặn ${p.name} đổi điểm!`);
+      log(room, "swap", `${above.name} dùng khiên chặn ${p.name} đổi điểm.`);
     } else {
       const theirs = above.points;
       above.points = before;
       p.points = theirs;
       send(ws, { t: "swapped", with: above.name, before, after: p.points });
       send(above.ws, { t: "swappedBy", by: p.name, before: theirs, after: above.points });
-      log(room, `${p.name} đổi điểm với ${above.name}!`);
+      log(room, "swap", `${p.name} đổi điểm với ${above.name}: ${before} → ${p.points}.`);
     }
     broadcast(room);
     return;
@@ -391,6 +422,7 @@ function handle(ws: WebSocket, msg: ClientMsg, ctx: { room?: Room; playerId?: st
 
   if (msg.t === "done") {
     p.done = true;
+    log(room, "finish", `${p.name} đã hoàn thành lượt chơi ở hạng ${rankedPlayers(room).findIndex((item) => item.id === p.id) + 1}.`);
     broadcast(room);
     checkAllDone(room);
   }
