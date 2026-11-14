@@ -1325,7 +1325,7 @@ img.ava, .ava { image-rendering: pixelated; }
 
 /* sân hứng */
 .catch-field { position: relative; height: min(56vh, 560px); min-height: 300px; overflow: hidden; touch-action: none; cursor: none; border: 4px solid var(--px-wood-d); box-shadow: 0 0 0 3px var(--px-wood-l); background: #a9d0ec; user-select: none; }
-.field-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 60%; pointer-events: none; }
+.field-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 60%; pointer-events: none; filter: brightness(0.72) saturate(0.78) contrast(0.92); }
 .field-top { position: absolute; top: 6px; left: 8px; right: 8px; display: flex; justify-content: space-between; align-items: flex-start; z-index: 3; pointer-events: none; }
 .timer { --p: 1; position: relative; display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px 3px 4px; background: rgba(246, 236, 210, 0.92); border: 3px solid var(--px-wood-d); font-family: var(--px-title); font-size: 22px; }
 .timer::after { content: ""; position: absolute; left: 0; bottom: -6px; height: 4px; width: calc(var(--p) * 100%); background: var(--px-good); }
@@ -1497,7 +1497,8 @@ img.ava, .ava { image-rendering: pixelated; }
    ================================================================ */
 .catch-wrap { background:
   radial-gradient(ellipse at center, rgba(0, 0, 0, 0) 45%, rgba(20, 14, 8, 0.55) 100%),
-  url("/images/catch/nen/dong-lua.png") center / cover fixed; }
+  url("/images/catch/nen/lang-que-moi.png") center / cover fixed;
+  background-color: #a9d0ec; }
 /* viền pixel nhiều lớp: gỗ đậm, gỗ sáng, gỗ đậm */
 .px-frame, .side-box, .qboard, .catch-field {
   box-shadow: 0 0 0 3px var(--px-wood-d), 0 0 0 6px var(--px-wood-l), 0 0 0 9px var(--px-wood-d), 0 12px 0 6px rgba(0, 0, 0, 0.28);

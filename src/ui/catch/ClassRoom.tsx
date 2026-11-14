@@ -23,7 +23,19 @@ import { isMuted, setMuted, sfx, startMusic, stopMusic } from "./sound";
 
 // Ảnh: public/images/catch/<nhóm>/<tên>.png. Ảnh nào lỗi cũng có hình thay thế.
 const IMG = "/images/catch/";
-const BG = ["nen/dong-lua.png", "nen/chieu-vang.png", "nen/song.png", "nen/lang-1995.png"];
+const BG = [
+  "nen/dong-lua.png",
+  "nen/chieu-vang.png",
+  "nen/song.png",
+  "nen/lang-1995.png",
+  "nen/vuon-thanh-long.png",
+  "nen/lang-co-dien.png",
+  "nen/vuon-trai-cay.png",
+  "nen/nong-thon-moi.png",
+  "nen/ben-song.png",
+  "nen/lang-nghe.png",
+  "nen/ven-khu-cong-nghiep.png",
+];
 
 // ---------------------------------------------------------------- kết nối máy chủ
 
